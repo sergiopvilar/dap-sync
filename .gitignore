@@ -1,0 +1,13 @@
+data/
+*.pyc
+__pycache__/
+.git/
+Gemfile.lock
+.bundle/
+vendor/
+node_modules/
+dist/
+public/assets/
+public/index.html
+!.gitkeep
+/tmp/test_sync_selection.txt

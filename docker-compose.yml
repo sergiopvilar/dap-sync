@@ -1,0 +1,18 @@
+services:
+  dap-sync-ui:
+    build: .
+    container_name: dap-sync-ui
+    ports:
+      - "3000:3000"
+    volumes:
+      - /Users/sergio/Music/Music/Media.localized/Music:/music:ro
+      - ./data:/data
+      - /Users/sergio/Library/OpenAudible/books/:/audiobooks:ro
+    environment:
+      - RACK_ENV=production
+      - DEVICE_SIZE=160
+      - AUDIOBOOKS_DIRECTORY=/Users/sergio/Library/OpenAudible/books/
+      - MUSIC_DIRECTORY=/Users/sergio/Music/Music/Media.localized/Music/
+      - MUSIC_DESTINATION=/Users/sergio/sync/music/
+      - AUDIOBOOKS_DESTINATION=/Users/sergio/sync/audiobooks/
+    restart: unless-stopped
