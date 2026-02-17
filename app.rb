@@ -413,6 +413,7 @@ def process_dap_sync_template
 
   template_content = File.read(DAP_SYNC_TEMPLATE)
   processed_content = template_content
+    .gsub('{{SYNC_SELECTION_FILE}}', SYNC_SELECTION_FILE)
     .gsub('{{MUSIC_DESTINATION}}', MUSIC_DESTINATION)
     .gsub('{{AUDIOBOOKS_DESTINATION}}', AUDIOBOOKS_DESTINATION)
     .gsub('{{MUSIC_DIRECTORY}}', MUSIC_DIRECTORY)

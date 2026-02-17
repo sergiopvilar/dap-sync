@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SYNC_SELECTION_FILE="./sync_selection.txt"
+SYNC_SELECTION_FILE="{{SYNC_SELECTION_FILE}}"
 DST="{{MUSIC_DESTINATION}}"
 AUDIOBOOKS_DST="{{AUDIOBOOKS_DESTINATION}}"
 MUSIC_DIRECTORY="{{MUSIC_DIRECTORY}}"
@@ -19,7 +19,7 @@ echo
 [[ -d "$DST" ]] || { echo "ERROR: Music destination not mounted."; exit 1; }
 [[ -d "$AUDIOBOOKS_DIRECTORY" ]] || { echo "WARNING: Audiobooks source not found, skipping audiobooks sync."; }
 
-# FAT32-safe rsync options
+# FAT32-safe rsync options (--no-owner/--no-group avoid chown errors on NAS)
 RSYNC_OPTS=(
   -rltv
   --progress
@@ -28,6 +28,7 @@ RSYNC_OPTS=(
   --no-owner
   --no-group
   --no-perms
+  --numeric-ids
   --chmod=ugo=rwX
   --modify-window=1
 )

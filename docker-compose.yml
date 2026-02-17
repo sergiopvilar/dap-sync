@@ -15,4 +15,5 @@ services:
       - MUSIC_DIRECTORY=/Users/sergio/Music/Music/Media.localized/Music/
       - MUSIC_DESTINATION=/Users/sergio/sync/music/
       - AUDIOBOOKS_DESTINATION=/Users/sergio/sync/audiobooks/
+      - SELECTION_FILE=/Users/sergio/sync/selection.txt
     restart: unless-stopped
