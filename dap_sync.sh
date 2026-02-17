@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SYNC_SELECTION_FILE="./data/sync_selection.txt"
+SYNC_SELECTION_FILE="./sync_selection.txt"
 DST="{{MUSIC_DESTINATION}}"
 AUDIOBOOKS_DST="{{AUDIOBOOKS_DESTINATION}}"
 MUSIC_DIRECTORY="{{MUSIC_DIRECTORY}}"
