@@ -7,7 +7,7 @@ module Fetchers
         {
           id: playlist[:id],
           name: playlist[:name],
-          songCount: playlist[:songCount],
+          songCount: playlist[:song_count],
           duration: playlist[:duration],
           public: playlist[:public],
           owner: playlist[:owner]

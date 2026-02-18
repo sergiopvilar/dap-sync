@@ -34,16 +34,7 @@ end
 get '/' do
   # Serve React app index.html
   index_path = File.join(File.dirname(__FILE__), 'public', 'index.html')
-  if File.exist?(index_path)
-    send_file index_path
-  else
-    # Fallback if React build doesn't exist yet
-    content_type :html
-    '<!DOCTYPE html><html><body><h1>Building React app...</h1></body></html>'
-  end
-rescue Errno::ENOENT
-  status 404
-  "File not found"
+  send_file index_path
 end
 
 get '/api/albums' do
@@ -107,7 +98,6 @@ get '/api/selection' do
   read_sync_selection.to_json
 end
 
-# Proxy to Subsonic getPlaylists (credentials stay on server)
 get '/api/playlists' do
   content_type :json
   unless File.exist?(Config.internal_navidrome_database)
@@ -115,5 +105,7 @@ get '/api/playlists' do
     return { error: 'Subsonic not configured' }.to_json
   end
 
-  Fetchers::Playlists.all.to_json
+  {
+    playlists: Fetchers::Playlists.all
+  }.to_json
 end

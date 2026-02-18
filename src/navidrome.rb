@@ -14,7 +14,15 @@ class Navidrome
   end
 
   def get_playlists
-    @db.execute("SELECT id, name FROM playlist").map { |row| { id: row[0], name: row[1] } }
+    @db.execute("SELECT id, name, song_count, duration, public FROM playlist").map do |row|
+      {
+        id: row[0],
+        name: row[1],
+        song_count: row[2],
+        duration: row[3],
+        public: row[4] == 1,
+      }
+    end
   end
 
   def get_playlist_songs(playlist_id)
