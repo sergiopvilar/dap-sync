@@ -6,6 +6,7 @@ gem 'sinatra', '~> 3.0'
 gem 'rack', '~> 2.2'
 gem 'uri'
 gem 'json'
+gem 'sqlite3'
 group :test do
   gem 'minitest', '~> 5.20'
   gem 'minitest-reporters', '~> 1.6'

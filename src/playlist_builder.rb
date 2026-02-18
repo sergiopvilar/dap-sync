@@ -2,6 +2,7 @@ require 'json'
 require 'net/http'
 require 'uri'
 require 'fileutils'
+require_relative 'navidrome.rb'
 
 class PlaylistBuilder
   PLAYLISTS_DIR = '/data/Playlists'
@@ -51,7 +52,7 @@ class PlaylistBuilder
 
     prefix = self.class.path_prefix
     @songs = entries.filter_map do |entry|
-      path_str = entry['path'].to_s.strip
+      path_str = Navidrome.new.get_song_path(entry['id']).to_s.strip
       next nil if path_str.empty?
       path_str = "/#{path_str}" unless path_str.start_with?('/')
       if prefix.empty?

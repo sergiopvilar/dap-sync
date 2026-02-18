@@ -36,6 +36,7 @@ COPY app.rb .
 COPY config.ru .
 COPY dap_sync.sh .
 COPY src/playlist_builder.rb ./src/
+COPY src/navidrome.rb ./src/
 
 # Copy built frontend from builder stage
 COPY --from=frontend-builder /app/public ./public
