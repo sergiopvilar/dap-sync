@@ -30,13 +30,20 @@ MUSIC_SOURCE = ENV.fetch('MUSIC_SOURCE', '/music')
 AUDIOBOOKS_SOURCE = ENV.fetch('AUDIOBOOKS_SOURCE', '/audiobooks')
 # MUSIC_DIRECTORY and AUDIOBOOKS_DIRECTORY should be host paths, not container paths
 # These are used to write full host paths to sync_selection.txt
+def normalize_path(path)
+  path.to_s.sub(%r{/+$}, '')
+end
+
 MUSIC_DIRECTORY = ENV.fetch('MUSIC_DIRECTORY', '/Users/sergio/Music/Music/Media.localized/Music/')
 AUDIOBOOKS_DIRECTORY = ENV.fetch('AUDIOBOOKS_DIRECTORY', '/Users/sergio/Library/OpenAudible/books/')
 MUSIC_DESTINATION = ENV.fetch('MUSIC_DESTINATION', '/Users/sergio/sync/music/')
 AUDIOBOOKS_DESTINATION = ENV.fetch('AUDIOBOOKS_DESTINATION', '/Users/sergio/sync/audiobooks/')
-SYNC_SELECTION_FILE = ENV.fetch('SYNC_SELECTION_FILE', SYNC_FILE_CONTAINER_PATH)
+PLAYLIST_DESTINATION = ENV.fetch('PLAYLIST_DESTINATION', '/Users/sergio/sync/playlists/')
+DATA_PATH = normalize_path(ENV.fetch('DATA_ABSOLUTE_PATH', '/data'))
+SYNC_SELECTION_FILE = "#{DATA_PATH}/sync_selection.txt"
+PLAYLISTS_DIR = "#{DATA_PATH}/Playlists"
 DAP_SYNC_TEMPLATE = ENV.fetch('DAP_SYNC_TEMPLATE', File.join(File.dirname(__FILE__), 'dap_sync.sh'))
-DAP_SYNC_OUTPUT = ENV.fetch('DAP_SYNC_OUTPUT', '/data/dap_sync.sh')
+DAP_SYNC_OUTPUT = ENV.fetch('DAP_SYNC_OUTPUT', "#{DATA_PATH}/dap_sync.sh")
 DEVICE_SIZE_GB = ENV.fetch('DEVICE_SIZE', '160').to_i
 
 # Optional Subsonic server (all three must be set to enable Playlists tab)
@@ -445,10 +452,12 @@ def process_dap_sync_template
   template_content = File.read(DAP_SYNC_TEMPLATE)
   processed_content = template_content
     .gsub('{{SYNC_SELECTION_FILE}}', SYNC_SELECTION_FILE)
+    .gsub('{{PLAYLISTS_DIR}}', PLAYLISTS_DIR)
     .gsub('{{MUSIC_DESTINATION}}', MUSIC_DESTINATION)
     .gsub('{{AUDIOBOOKS_DESTINATION}}', AUDIOBOOKS_DESTINATION)
     .gsub('{{MUSIC_DIRECTORY}}', MUSIC_DIRECTORY)
     .gsub('{{AUDIOBOOKS_DIRECTORY}}', AUDIOBOOKS_DIRECTORY)
+    .gsub('{{PLAYLIST_DESTINATION}}', PLAYLIST_DESTINATION)
 
   File.write(DAP_SYNC_OUTPUT, processed_content)
   File.chmod(0o755, DAP_SYNC_OUTPUT)

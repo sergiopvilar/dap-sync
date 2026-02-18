@@ -4,20 +4,25 @@ set -euo pipefail
 SYNC_SELECTION_FILE="{{SYNC_SELECTION_FILE}}"
 DST="{{MUSIC_DESTINATION}}"
 AUDIOBOOKS_DST="{{AUDIOBOOKS_DESTINATION}}"
+PLAYLIST_DESTINATION="{{PLAYLIST_DESTINATION}}"
 MUSIC_DIRECTORY="{{MUSIC_DIRECTORY}}"
 AUDIOBOOKS_DIRECTORY="{{AUDIOBOOKS_DIRECTORY}}"
+PLAYLISTS_DIR="{{PLAYLISTS_DIR}}"
 
 echo "========== SYNC MUSIC & AUDIOBOOKS =========="
 echo "Music Source      : $MUSIC_DIRECTORY"
 echo "Music Destination : $DST"
 echo "Audiobooks Source : $AUDIOBOOKS_DIRECTORY"
 echo "Audiobooks Dest   : $AUDIOBOOKS_DST"
+echo "Playlists Source  : $PLAYLISTS_DIR"
+echo "Playlists Dest    : $PLAYLIST_DESTINATION"
 echo
 
 # Safety checks
 [[ -d "$MUSIC_DIRECTORY" ]] || { echo "ERROR: Music source not found."; exit 1; }
 [[ -d "$DST" ]] || { echo "ERROR: Music destination not mounted."; exit 1; }
 [[ -d "$AUDIOBOOKS_DIRECTORY" ]] || { echo "WARNING: Audiobooks source not found, skipping audiobooks sync."; }
+[[ -d "$PLAYLISTS_DIR" ]] || { echo "WARNING: Playlists source not found, skipping playlists sync."; }
 
 # FAT32-safe rsync options (--no-owner/--no-group avoid chown errors on NAS)
 RSYNC_OPTS=(
@@ -402,6 +407,18 @@ if [ -d "$AUDIOBOOKS_DIRECTORY" ]; then
       
       rm -f "$temp_ab_expected_list"
     fi
+  fi
+fi
+
+# Sync Playlists (.m3u8 files from UI-selected playlists)
+if [[ -d "$PLAYLISTS_DIR" ]]; then
+  echo
+  echo "========== SYNCING PLAYLISTS =========="
+  if [[ -d "$PLAYLIST_DESTINATION" ]] || mkdir -p "$PLAYLIST_DESTINATION"; then
+    echo "Syncing playlists: $PLAYLISTS_DIR -> $PLAYLIST_DESTINATION"
+    rsync "${RSYNC_OPTS[@]}" "$PLAYLISTS_DIR/" "$PLAYLIST_DESTINATION/"
+  else
+    echo "WARNING: Could not create playlist destination $PLAYLIST_DESTINATION, skipping playlists sync."
   fi
 fi
 
