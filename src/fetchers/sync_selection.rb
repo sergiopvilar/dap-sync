@@ -46,13 +46,13 @@ module Fetchers
           elsif line == 'ALL_AUDIOBOOKS=true'
             @audiobooks_mode = 'all'
           elsif line.start_with?('MUSIC_ALBUM=')
-            @music_mode = 'selected' if @music_mode.nil?
-            album_path = line.sub('MUSIC_ALBUM=', '').strip
+            @music_mode = 'selected'
+            album_path = line.sub('MUSIC_ALBUM=', '').strip.gsub(Config.music_source, '')
             @music_albums << album_path unless album_path.empty?
           elsif line.start_with?('AUDIOBOOKS=')
-            @audiobooks_mode = 'selected' if @audiobooks_mode.nil?
+            @audiobooks_mode = 'selected'
             audiobook_path = line.sub('AUDIOBOOKS=', '').strip
-            @audiobooks_list << audiobook_path unless audiobook_path.empty?
+            @audiobooks_list << audiobook_path.gsub(Config.audiobooks_source, '') unless audiobook_path.empty?
           elsif line.start_with?('PLAYLIST_ID=')
             pid = line.sub('PLAYLIST_ID=', '').strip
             @playlist_ids << pid unless pid.empty?
