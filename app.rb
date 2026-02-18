@@ -165,10 +165,10 @@ def get_audiobooks
 end
 
 def read_sync_selection
-  return { music: { mode: "all", albums: [] }, audiobooks: { mode: "all", audiobooks: [] } } unless File.exist?(SYNC_SELECTION_FILE)
+  return { music: { mode: "all", albums: [] }, audiobooks: { mode: "all", audiobooks: [] } } unless File.exist?(SYNC_FILE_CONTAINER_PATH)
 
   begin
-    content = File.read(SYNC_SELECTION_FILE).strip
+    content = File.read(SYNC_FILE_CONTAINER_PATH).strip
     
     # Try to parse new format (ALL_MUSIC/ALL_AUDIOBOOKS flags or MUSIC_ALBUM= / AUDIOBOOKS= lines)
     if content.include?('ALL_MUSIC=') || content.include?('ALL_AUDIOBOOKS=') || content.include?('MUSIC_ALBUM=') || content.include?('AUDIOBOOKS=')
@@ -378,7 +378,7 @@ def convert_to_host_path(path, container_source, host_directory)
 end
 
 def write_sync_selection(music_mode, music_albums, audiobooks_mode, audiobooks_list)
-  FileUtils.mkdir_p(File.dirname(SYNC_SELECTION_FILE))
+  FileUtils.mkdir_p(File.dirname(SYNC_FILE_CONTAINER_PATH))
 
   lines = []
   # Music: flag for "all" or list of selected albums
@@ -401,7 +401,7 @@ def write_sync_selection(music_mode, music_albums, audiobooks_mode, audiobooks_l
   end
 
   content = lines.join("\n") + "\n"
-  File.write(SYNC_SELECTION_FILE, content)
+  File.write(SYNC_FILE_CONTAINER_PATH, content)
 
   # Process dap_sync.sh template and save to /data with env vars substituted
   process_dap_sync_template
