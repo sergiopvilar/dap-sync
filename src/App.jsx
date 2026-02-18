@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import MusicTab from './components/MusicTab'
 import AudiobooksTab from './components/AudiobooksTab'
+import PlaylistsTab from './components/PlaylistsTab'
 import CapacityBar from './components/CapacityBar'
 import SelectionSummary from './components/SelectionSummary'
 
@@ -22,6 +23,8 @@ function App() {
   const [deviceSizeGB, setDeviceSizeGB] = useState(160)
   const [deviceSizeBytes, setDeviceSizeBytes] = useState(0)
   const [deviceSizeFormatted, setDeviceSizeFormatted] = useState('0 B')
+  const [subsonicConfigured, setSubsonicConfigured] = useState(false)
+  const [selectedPlaylistIds, setSelectedPlaylistIds] = useState([])
 
   const formatSize = (bytes) => {
     if (bytes === 0) return '0 B'
@@ -111,11 +114,14 @@ function App() {
       }
       setDeviceSizeBytes(bytes)
       setDeviceSizeFormatted(data.device_size_formatted || formatSize(bytes))
-      
+      setSubsonicConfigured(!!data.subsonic_configured)
+
       const selection = data.selection || {}
       const musicSel = selection.music || {}
       const audiobooksSel = selection.audiobooks || {}
-      
+      const playlistsSel = selection.playlists || {}
+      setSelectedPlaylistIds(playlistsSel.playlist_ids || [])
+
       if (musicSel.mode === 'selected') {
         setMusicMode('selected')
         setSelectedMusicAlbums([...(musicSel.albums || [])])
@@ -156,7 +162,8 @@ function App() {
           music_mode: musicMode,
           music_albums: selectedMusicAlbums,
           audiobooks_mode: audiobooksMode,
-          audiobooks: selectedAudiobooks
+          audiobooks: selectedAudiobooks,
+          playlist_ids: selectedPlaylistIds
         })
       })
 
@@ -165,8 +172,14 @@ function App() {
       if (response.ok) {
         const musicCount = musicMode === 'all' ? 'all' : selectedMusicAlbums.length
         const abCount = audiobooksMode === 'all' ? 'all' : selectedAudiobooks.length
+        const playlistCount = selectedPlaylistIds.length
+        const parts = [
+          `${musicCount} music album(s)`,
+          `${abCount} audiobook(s)`
+        ]
+        if (subsonicConfigured) parts.push(`${playlistCount} playlist(s)`)
         showMessage(
-          `Selection saved: ${musicCount} music album(s), ${abCount} audiobook(s)`,
+          `Selection saved: ${parts.join(', ')}`,
           'success'
         )
       } else {
@@ -221,6 +234,18 @@ function App() {
               >
                 Audiobooks
               </button>
+              {subsonicConfigured && (
+                <button
+                  onClick={() => setActiveTab('playlists')}
+                  className={`px-4 py-2 font-semibold transition-colors ${
+                    activeTab === 'playlists'
+                      ? 'border-b-2 border-blue-600 text-blue-600'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Playlists
+                </button>
+              )}
             </div>
           </div>
 
@@ -252,6 +277,14 @@ function App() {
               loading={loading}
               formatSize={formatSize}
               getAudiobooksSelectionSizeBytes={getAudiobooksSelectionSizeBytes}
+            />
+          )}
+
+          {/* Playlists Tab (Subsonic) */}
+          {subsonicConfigured && activeTab === 'playlists' && (
+            <PlaylistsTab
+              selectedPlaylistIds={selectedPlaylistIds}
+              setSelectedPlaylistIds={setSelectedPlaylistIds}
             />
           )}
 

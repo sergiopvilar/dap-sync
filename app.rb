@@ -2,6 +2,9 @@
 require 'sinatra'
 require 'json'
 require 'fileutils'
+require 'net/http'
+require 'uri'
+require_relative 'src/playlist_builder.rb'
 
 set :bind, '0.0.0.0'
 set :port, 3000
@@ -35,6 +38,12 @@ SYNC_SELECTION_FILE = ENV.fetch('SYNC_SELECTION_FILE', SYNC_FILE_CONTAINER_PATH)
 DAP_SYNC_TEMPLATE = ENV.fetch('DAP_SYNC_TEMPLATE', File.join(File.dirname(__FILE__), 'dap_sync.sh'))
 DAP_SYNC_OUTPUT = ENV.fetch('DAP_SYNC_OUTPUT', '/data/dap_sync.sh')
 DEVICE_SIZE_GB = ENV.fetch('DEVICE_SIZE', '160').to_i
+
+# Optional Subsonic server (all three must be set to enable Playlists tab)
+SUBSONIC_URL = (ENV['SUBSONIC_URL'] || '').strip
+SUBSONIC_USERNAME = (ENV['SUBSONIC_USERNAME'] || '').strip
+SUBSONIC_PASSWORD = (ENV['SUBSONIC_PASSWORD'] || '').strip
+SUBSONIC_CONFIGURED = SUBSONIC_URL != '' && SUBSONIC_USERNAME != '' && SUBSONIC_PASSWORD != ''
 
 def calculate_directory_size(path)
   return 0 unless Dir.exist?(path)
@@ -165,15 +174,17 @@ def get_audiobooks
 end
 
 def read_sync_selection
-  return { music: { mode: "all", albums: [] }, audiobooks: { mode: "all", audiobooks: [] } } unless File.exist?(SYNC_FILE_CONTAINER_PATH)
+  default = { music: { mode: "all", albums: [] }, audiobooks: { mode: "all", audiobooks: [] }, playlists: { playlist_ids: [] } }
+  return default unless File.exist?(SYNC_FILE_CONTAINER_PATH)
 
   begin
     content = File.read(SYNC_FILE_CONTAINER_PATH).strip
     
     # Try to parse new format (ALL_MUSIC/ALL_AUDIOBOOKS flags or MUSIC_ALBUM= / AUDIOBOOKS= lines)
-    if content.include?('ALL_MUSIC=') || content.include?('ALL_AUDIOBOOKS=') || content.include?('MUSIC_ALBUM=') || content.include?('AUDIOBOOKS=')
+    if content.include?('ALL_MUSIC=') || content.include?('ALL_AUDIOBOOKS=') || content.include?('MUSIC_ALBUM=') || content.include?('AUDIOBOOKS=') || content.include?('PLAYLIST_ID=')
       music_albums = []
       audiobooks_list = []
+      playlist_ids = []
       music_mode = nil
       audiobooks_mode = nil
 
@@ -193,6 +204,9 @@ def read_sync_selection
           audiobooks_mode = 'selected' if audiobooks_mode.nil?
           audiobook_path = line.sub('AUDIOBOOKS=', '').strip
           audiobooks_list << audiobook_path unless audiobook_path.empty?
+        elsif line.start_with?('PLAYLIST_ID=')
+          pid = line.sub('PLAYLIST_ID=', '').strip
+          playlist_ids << pid unless pid.empty?
         end
       end
 
@@ -234,7 +248,8 @@ def read_sync_selection
         audiobooks: {
           mode: audiobooks_mode,
           audiobooks: relative_audiobooks
-        }
+        },
+        playlists: { playlist_ids: playlist_ids }
       }
     end
 
@@ -244,7 +259,8 @@ def read_sync_selection
       music_albums = []
       audiobooks_mode = "all"
       audiobooks_list = []
-      
+      playlist_ids = []
+
       content.lines.each do |line|
         line = line.strip
         next if line.empty? || line.start_with?('#')
@@ -259,6 +275,9 @@ def read_sync_selection
         elsif line.start_with?('AUDIOBOOKS=')
           audiobook_path = line.sub('AUDIOBOOKS=', '').strip
           audiobooks_list << audiobook_path unless audiobook_path.empty?
+        elsif line.start_with?('PLAYLIST_ID=')
+          pid = line.sub('PLAYLIST_ID=', '').strip
+          playlist_ids << pid unless pid.empty?
         end
       end
       
@@ -291,7 +310,8 @@ def read_sync_selection
         audiobooks: {
           mode: audiobooks_mode,
           audiobooks: relative_audiobooks
-        }
+        },
+        playlists: { playlist_ids: playlist_ids }
       }
     end
     
@@ -329,19 +349,20 @@ def read_sync_selection
         audiobooks: {
           mode: parsed['audiobooks']&.dig('mode') || 'all',
           audiobooks: relative_audiobooks
-        }
+        },
+        playlists: { playlist_ids: parsed['playlists']&.dig('playlist_ids') || [] }
       }
     end
     
     # Legacy format: just "*" or list of albums
     if content == "*" || content.empty?
-      { music: { mode: "all", albums: [] }, audiobooks: { mode: "all", audiobooks: [] } }
+      default
     else
       albums = content.lines.map(&:strip).reject(&:empty?)
-      { music: { mode: "selected", albums: albums }, audiobooks: { mode: "all", audiobooks: [] } }
+      { music: { mode: "selected", albums: albums }, audiobooks: { mode: "all", audiobooks: [] }, playlists: { playlist_ids: [] } }
     end
   rescue => e
-    { music: { mode: "all", albums: [] }, audiobooks: { mode: "all", audiobooks: [] } }
+    default
   end
 end
 
@@ -377,7 +398,7 @@ def convert_to_host_path(path, container_source, host_directory)
   "#{host_dir}#{relative_path}"
 end
 
-def write_sync_selection(music_mode, music_albums, audiobooks_mode, audiobooks_list)
+def write_sync_selection(music_mode, music_albums, audiobooks_mode, audiobooks_list, playlist_ids = [])
   FileUtils.mkdir_p(File.dirname(SYNC_FILE_CONTAINER_PATH))
 
   lines = []
@@ -399,6 +420,12 @@ def write_sync_selection(music_mode, music_albums, audiobooks_mode, audiobooks_l
       lines << "AUDIOBOOKS=#{audiobook_path}"
     end
   end
+  # Subsonic playlist IDs (for future sync)
+  (playlist_ids || []).each do |id|
+    lines << "PLAYLIST_ID=#{id.to_s.strip}" unless id.to_s.strip.empty?
+  end
+
+  
 
   content = lines.join("\n") + "\n"
   File.write(SYNC_FILE_CONTAINER_PATH, content)
@@ -465,7 +492,7 @@ get '/api/albums' do
   # Use integer to avoid floating point precision issues
   device_size_bytes = (DEVICE_SIZE_GB * 1024 * 1024 * 1024).to_i
   
-  {
+  payload = {
     albums_by_artist: grouped,
     albums: get_all_albums,
     audiobooks: audiobooks,
@@ -476,8 +503,10 @@ get '/api/albums' do
     audiobooks_total_size_formatted: format_size(audiobooks_total_size),
     device_size_gb: DEVICE_SIZE_GB,
     device_size_bytes: device_size_bytes,
-    device_size_formatted: format_size(device_size_bytes)
-  }.to_json
+    device_size_formatted: format_size(device_size_bytes),
+    subsonic_configured: SUBSONIC_CONFIGURED
+  }
+  payload.to_json
 end
 
 post '/api/selection' do
@@ -488,14 +517,62 @@ post '/api/selection' do
   music_albums = data['music_albums'] || data['albums'] || []
   audiobooks_mode = data['audiobooks_mode'] || 'all'
   audiobooks_list = data['audiobooks'] || []
+  playlist_ids = data['playlist_ids'] || []
   
   # Pass relative paths - write_sync_selection will convert to full paths using MUSIC_DIRECTORY/AUDIOBOOKS_DIRECTORY
-  write_sync_selection(music_mode, music_albums, audiobooks_mode, audiobooks_list)
-  
+  write_sync_selection(music_mode, music_albums, audiobooks_mode, audiobooks_list, playlist_ids)
+
+  # Rebuild playlist files: empty /data/Playlists and write one .m3u8 per selected playlist
+  PlaylistBuilder.reset_playlists_dir
+
+  playlist_ids.each do |id|
+    next if id.to_s.strip.empty?
+    begin
+      PlaylistBuilder.new(id.to_s.strip).write_playlist_file
+    rescue StandardError => e
+      puts "PlaylistBuilder failed for #{id}: #{e.message}"
+    end
+  end
+
   { success: true, message: "Selection saved successfully" }.to_json
 end
 
 get '/api/selection' do
   content_type :json
   read_sync_selection.to_json
+end
+
+# Proxy to Subsonic getPlaylists (credentials stay on server)
+get '/api/playlists' do
+  content_type :json
+  unless SUBSONIC_CONFIGURED
+    status 503
+    return { error: 'Subsonic not configured' }.to_json
+  end
+  base = SUBSONIC_URL.sub(%r{/+$}, '')
+  path = '/rest/getPlaylists'
+  params = {
+    u: SUBSONIC_USERNAME,
+    p: SUBSONIC_PASSWORD,
+    v: '1.16.0',
+    c: 'dap-sync',
+    f: 'json'
+  }
+  query = URI.encode_www_form(params)
+  url = URI("#{base}#{path}?#{query}")
+  begin
+    res = Net::HTTP.get_response(url)
+    body = res.body
+    data = JSON.parse(body)
+    if data.dig('subsonic-response', 'status') == 'ok'
+      playlists = data.dig('subsonic-response', 'playlists', 'playlist') || []
+      { playlists: playlists }.to_json
+    else
+      status 502
+      { error: data.dig('subsonic-response', 'error', 'message') || 'Subsonic error' }.to_json
+    end
+  rescue StandardError => e
+    status 502
+    { error: "Subsonic request failed: #{e.message}" }.to_json
+  end
 end

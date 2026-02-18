@@ -53,6 +53,12 @@ Paths are configurable via environment variables (set in `docker-compose.yml`):
 - `SYNC_SELECTION_FILE` - where to save selection (default: `/data/sync_selection.txt`)
 - `DEVICE_SIZE` - device capacity in GB (default: `160`)
 
+**Optional – Subsonic (Playlists tab):** If you set all three variables below, a "Playlists" tab appears in the UI and lists playlists from your Subsonic server. Credentials are used only on the server; the frontend never sees the password.
+
+- `SUBSONIC_URL` - Subsonic server base URL (e.g. `http://subsonic:4040`)
+- `SUBSONIC_USERNAME` - Subsonic username
+- `SUBSONIC_PASSWORD` - Subsonic password
+
 The Docker volume mounts ensure:
 - Music source is mounted read-only from host to container
 - Audiobooks source is mounted read-only from host to container
