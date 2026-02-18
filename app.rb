@@ -168,26 +168,36 @@ def read_sync_selection
   begin
     content = File.read(SYNC_SELECTION_FILE).strip
     
-    # Try to parse new format (key=value format)
-    # Check if file has MUSIC_ALBUM= or AUDIOBOOKS= lines (new format)
-    if content.include?('MUSIC_ALBUM=') || content.include?('AUDIOBOOKS=')
+    # Try to parse new format (ALL_MUSIC/ALL_AUDIOBOOKS flags or MUSIC_ALBUM= / AUDIOBOOKS= lines)
+    if content.include?('ALL_MUSIC=') || content.include?('ALL_AUDIOBOOKS=') || content.include?('MUSIC_ALBUM=') || content.include?('AUDIOBOOKS=')
       music_albums = []
       audiobooks_list = []
-      
+      music_mode = nil
+      audiobooks_mode = nil
+
       content.lines.each do |line|
         line = line.strip
         next if line.empty? || line.start_with?('#')
-        
-        if line.start_with?('MUSIC_ALBUM=')
+
+        if line == 'ALL_MUSIC=true'
+          music_mode = 'all'
+        elsif line == 'ALL_AUDIOBOOKS=true'
+          audiobooks_mode = 'all'
+        elsif line.start_with?('MUSIC_ALBUM=')
+          music_mode = 'selected' if music_mode.nil?
           album_path = line.sub('MUSIC_ALBUM=', '').strip
           music_albums << album_path unless album_path.empty?
         elsif line.start_with?('AUDIOBOOKS=')
+          audiobooks_mode = 'selected' if audiobooks_mode.nil?
           audiobook_path = line.sub('AUDIOBOOKS=', '').strip
           audiobooks_list << audiobook_path unless audiobook_path.empty?
         end
       end
-      
-      # Convert full paths back to relative paths for display
+
+      # Infer mode from list if flag was not set (backward compatibility)
+      all_albums = get_all_albums
+      all_audiobooks = get_audiobooks.map { |ab| ab[:path] }
+
       relative_music = music_albums.map do |path|
         if path.start_with?(MUSIC_DIRECTORY)
           path.sub(/^#{Regexp.escape(MUSIC_DIRECTORY)}/, '')
@@ -197,7 +207,7 @@ def read_sync_selection
           path
         end
       end
-      
+
       relative_audiobooks = audiobooks_list.map do |path|
         if path.start_with?(AUDIOBOOKS_DIRECTORY)
           path.sub(/^#{Regexp.escape(AUDIOBOOKS_DIRECTORY)}/, '')
@@ -207,14 +217,10 @@ def read_sync_selection
           path
         end
       end
-      
-      # Determine mode: if we have all albums/audiobooks, it's "all", otherwise "selected"
-      all_albums = get_all_albums
-      all_audiobooks = get_audiobooks.map { |ab| ab[:path] }
-      
-      music_mode = (relative_music.sort == all_albums.sort) ? "all" : "selected"
-      audiobooks_mode = (relative_audiobooks.sort == all_audiobooks.sort) ? "all" : "selected"
-      
+
+      music_mode = (relative_music.sort == all_albums.sort) ? 'all' : 'selected' if music_mode.nil?
+      audiobooks_mode = (relative_audiobooks.sort == all_audiobooks.sort) ? 'all' : 'selected' if audiobooks_mode.nil?
+
       return {
         music: {
           mode: music_mode,
@@ -370,31 +376,20 @@ def write_sync_selection(music_mode, music_albums, audiobooks_mode, audiobooks_l
   FileUtils.mkdir_p(File.dirname(SYNC_SELECTION_FILE))
   
   File.open(SYNC_SELECTION_FILE, 'w') do |f|
-    # Write music albums (all albums if mode is "all", selected albums otherwise)
+    # Write music: flag for "all" or list of selected albums
     if music_mode == "all"
-      # Get all albums from grouped structure
-      get_albums_grouped_by_artist.each do |artist, album_list|
-        album_list.each do |album|
-          album_path = convert_to_host_path(album[:path], MUSIC_SOURCE, MUSIC_DIRECTORY)
-          f.puts "MUSIC_ALBUM=#{album_path}"
-        end
-      end
+      f.puts "ALL_MUSIC=true"
     else
-      # Write selected albums
       music_albums.each do |path|
         album_path = convert_to_host_path(path, MUSIC_SOURCE, MUSIC_DIRECTORY)
         f.puts "MUSIC_ALBUM=#{album_path}"
       end
     end
-    
-    # Write audiobooks (all audiobooks if mode is "all", selected audiobooks otherwise)
+
+    # Write audiobooks: flag for "all" or list of selected audiobooks
     if audiobooks_mode == "all"
-      get_audiobooks.each do |ab|
-        audiobook_path = convert_to_host_path(ab[:path], AUDIOBOOKS_SOURCE, AUDIOBOOKS_DIRECTORY)
-        f.puts "AUDIOBOOKS=#{audiobook_path}"
-      end
+      f.puts "ALL_AUDIOBOOKS=true"
     else
-      # Write selected audiobooks
       audiobooks_list.each do |path|
         audiobook_path = convert_to_host_path(path, AUDIOBOOKS_SOURCE, AUDIOBOOKS_DIRECTORY)
         f.puts "AUDIOBOOKS=#{audiobook_path}"

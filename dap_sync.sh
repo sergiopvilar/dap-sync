@@ -49,8 +49,13 @@ if [ -f "$SYNC_SELECTION_FILE" ]; then
     # Skip empty lines and comments
     [ -z "$line" ] && continue
     [ "${line#\#}" != "$line" ] && continue
-    
-    if [[ "$line" == MUSIC_ALBUM=* ]]; then
+
+    if [[ "$line" == "ALL_MUSIC=true" ]]; then
+      MUSIC_SYNC_ALL=true
+    elif [[ "$line" == "ALL_AUDIOBOOKS=true" ]]; then
+      AUDIOBOOKS_SYNC_ALL=true
+    elif [[ "$line" == MUSIC_ALBUM=* ]]; then
+      MUSIC_SYNC_ALL=false
       album_path="${line#MUSIC_ALBUM=}"
       album_path="${album_path#"${album_path%%[![:space:]]*}"}"  # trim leading whitespace
       album_path="${album_path%"${album_path##*[![:space:]]}"}"  # trim trailing whitespace
@@ -58,6 +63,7 @@ if [ -f "$SYNC_SELECTION_FILE" ]; then
         SELECTED_MUSIC_ALBUMS+=("$album_path")
       fi
     elif [[ "$line" == AUDIOBOOKS=* ]]; then
+      AUDIOBOOKS_SYNC_ALL=false
       audiobook_path="${line#AUDIOBOOKS=}"
       audiobook_path="${audiobook_path#"${audiobook_path%%[![:space:]]*}"}"  # trim leading whitespace
       audiobook_path="${audiobook_path%"${audiobook_path##*[![:space:]]}"}"  # trim trailing whitespace
@@ -66,19 +72,6 @@ if [ -f "$SYNC_SELECTION_FILE" ]; then
       fi
     fi
   done < "$SYNC_SELECTION_FILE"
-  
-  # Set sync flags: if arrays are empty, sync all; otherwise sync only selected
-  if [ ${#SELECTED_MUSIC_ALBUMS[@]} -eq 0 ]; then
-    MUSIC_SYNC_ALL=true
-  else
-    MUSIC_SYNC_ALL=false
-  fi
-  
-  if [ ${#SELECTED_AUDIOBOOKS[@]} -eq 0 ]; then
-    AUDIOBOOKS_SYNC_ALL=true
-  else
-    AUDIOBOOKS_SYNC_ALL=false
-  fi
 else
   echo "No selection file found at $SYNC_SELECTION_FILE, syncing ALL"
 fi
