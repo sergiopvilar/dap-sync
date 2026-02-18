@@ -374,31 +374,35 @@ end
 
 def write_sync_selection(music_mode, music_albums, audiobooks_mode, audiobooks_list)
   FileUtils.mkdir_p(File.dirname(SYNC_SELECTION_FILE))
-  
-  File.open(SYNC_SELECTION_FILE, 'w') do |f|
-    # Write music: flag for "all" or list of selected albums
-    if music_mode == "all"
-      f.puts "ALL_MUSIC=true"
-    else
-      music_albums.each do |path|
-        album_path = convert_to_host_path(path, MUSIC_SOURCE, MUSIC_DIRECTORY)
-        f.puts "MUSIC_ALBUM=#{album_path}"
-      end
-    end
 
-    # Write audiobooks: flag for "all" or list of selected audiobooks
-    if audiobooks_mode == "all"
-      f.puts "ALL_AUDIOBOOKS=true"
-    else
-      audiobooks_list.each do |path|
-        audiobook_path = convert_to_host_path(path, AUDIOBOOKS_SOURCE, AUDIOBOOKS_DIRECTORY)
-        f.puts "AUDIOBOOKS=#{audiobook_path}"
-      end
+  lines = []
+  # Music: flag for "all" or list of selected albums
+  if music_mode.to_s == "all"
+    lines << "ALL_MUSIC=true"
+  else
+    (music_albums || []).each do |path|
+      album_path = convert_to_host_path(path.to_s, MUSIC_SOURCE, MUSIC_DIRECTORY)
+      lines << "MUSIC_ALBUM=#{album_path}"
+    end
+  end
+  # Audiobooks: flag for "all" or list of selected audiobooks
+  if audiobooks_mode.to_s == "all"
+    lines << "ALL_AUDIOBOOKS=true"
+  else
+    (audiobooks_list || []).each do |path|
+      audiobook_path = convert_to_host_path(path.to_s, AUDIOBOOKS_SOURCE, AUDIOBOOKS_DIRECTORY)
+      lines << "AUDIOBOOKS=#{audiobook_path}"
     end
   end
 
+  content = lines.join("\n") + "\n"
+  File.write(SYNC_SELECTION_FILE, content)
+
   # Process dap_sync.sh template and save to /data with env vars substituted
   process_dap_sync_template
+rescue StandardError => e
+  puts "Error writing sync selection: #{e.message}"
+  raise
 end
 
 def process_dap_sync_template
