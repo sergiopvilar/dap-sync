@@ -8,6 +8,8 @@ set :port, 3000
 set :public_folder, File.join(File.dirname(__FILE__), 'public')
 set :static, true
 
+SYNC_FILE_CONTAINER_PATH = '/data/sync_selection.txt'
+
 before do
   headers 'Access-Control-Allow-Origin' => '*',
           'Access-Control-Allow-Methods' => 'GET, POST, OPTIONS',
@@ -29,7 +31,7 @@ MUSIC_DIRECTORY = ENV.fetch('MUSIC_DIRECTORY', '/Users/sergio/Music/Music/Media.
 AUDIOBOOKS_DIRECTORY = ENV.fetch('AUDIOBOOKS_DIRECTORY', '/Users/sergio/Library/OpenAudible/books/')
 MUSIC_DESTINATION = ENV.fetch('MUSIC_DESTINATION', '/Users/sergio/sync/music/')
 AUDIOBOOKS_DESTINATION = ENV.fetch('AUDIOBOOKS_DESTINATION', '/Users/sergio/sync/audiobooks/')
-SYNC_SELECTION_FILE = ENV.fetch('SYNC_SELECTION_FILE', '/data/sync_selection.txt')
+SYNC_SELECTION_FILE = ENV.fetch('SYNC_SELECTION_FILE', SYNC_FILE_CONTAINER_PATH)
 DAP_SYNC_TEMPLATE = ENV.fetch('DAP_SYNC_TEMPLATE', File.join(File.dirname(__FILE__), 'dap_sync.sh'))
 DAP_SYNC_OUTPUT = ENV.fetch('DAP_SYNC_OUTPUT', '/data/dap_sync.sh')
 DEVICE_SIZE_GB = ENV.fetch('DEVICE_SIZE', '160').to_i
@@ -164,7 +166,7 @@ end
 
 def read_sync_selection
   return { music: { mode: "all", albums: [] }, audiobooks: { mode: "all", audiobooks: [] } } unless File.exist?(SYNC_SELECTION_FILE)
-  
+
   begin
     content = File.read(SYNC_SELECTION_FILE).strip
     
@@ -208,15 +210,18 @@ def read_sync_selection
         end
       end
 
+      # Normalize to relative paths that match get_audiobooks (path = basename or relative under source)
+      aud_dir = AUDIOBOOKS_DIRECTORY.end_with?('/') ? AUDIOBOOKS_DIRECTORY : "#{AUDIOBOOKS_DIRECTORY}/"
       relative_audiobooks = audiobooks_list.map do |path|
-        if path.start_with?(AUDIOBOOKS_DIRECTORY)
-          path.sub(/^#{Regexp.escape(AUDIOBOOKS_DIRECTORY)}/, '')
+        if path.start_with?(aud_dir) || path.start_with?(AUDIOBOOKS_DIRECTORY)
+          path.sub(/^#{Regexp.escape(aud_dir)}/, '').sub(/^#{Regexp.escape(AUDIOBOOKS_DIRECTORY)}/, '').strip
         elsif path.start_with?('/')
-          path
+          File.basename(path)
         else
           path
         end
       end
+      relative_audiobooks.map! { |p| p.start_with?('/') ? p[1..] : p }
 
       music_mode = (relative_music.sort == all_albums.sort) ? 'all' : 'selected' if music_mode.nil?
       audiobooks_mode = (relative_audiobooks.sort == all_audiobooks.sort) ? 'all' : 'selected' if audiobooks_mode.nil?
@@ -232,7 +237,7 @@ def read_sync_selection
         }
       }
     end
-    
+
     # Try to parse old format with MUSIC_MODE= (for backward compatibility)
     if content.include?('MUSIC_MODE=') || content.include?('AUDIOBOOKS_MODE=')
       music_mode = "all"
