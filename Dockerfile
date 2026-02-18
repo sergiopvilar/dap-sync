@@ -1,6 +1,6 @@
 FROM node:20-slim AS frontend-builder
 
-WORKDIR /app
+WORKDIR /dap-sync
 
 # Copy package files
 COPY package.json ./
@@ -13,6 +13,7 @@ COPY index.html ./
 COPY vite.config.js ./
 COPY tailwind.config.js ./
 COPY postcss.config.js ./
+COPY app/ ./app/
 COPY src/ ./src/
 
 # Build React app
@@ -21,7 +22,7 @@ RUN npm run build
 # Ruby backend stage
 FROM ruby:3.2-slim
 
-WORKDIR /app
+WORKDIR /dap-sync
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \
@@ -34,12 +35,11 @@ RUN bundle install
 # Copy backend files
 COPY app.rb .
 COPY config.ru .
-COPY dap_sync.sh .
-COPY src/playlist_builder.rb ./src/
-COPY src/navidrome.rb ./src/
+COPY config.yaml .
+COPY src/ ./src/
 
 # Copy built frontend from builder stage
-COPY --from=frontend-builder /app/public ./public
+COPY --from=frontend-builder /dap-sync/public ./public
 
 # Create data directory for sync selection file
 RUN mkdir -p /data

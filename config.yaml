@@ -1,0 +1,11 @@
+music_source: <%= ENV['MUSIC_DIRECTORY'] %>
+audiobooks_source: <%= ENV['AUDIOBOOKS_DIRECTORY'] %>
+music_destination: <%= ENV['MUSIC_DESTINATION'] %>
+audiobooks_destination: <%= ENV['AUDIOBOOKS_DESTINATION'] %>
+playlist_destination: <%= ENV['PLAYLIST_DESTINATION'] %>
+data_path: <%= ENV['DATA_ABSOLUTE_PATH'] %>
+device_size: <%= ENV['DEVICE_SIZE'] %>
+navidrome_access: <%= ENV['NAVIDROME_ACCESS'] %>
+device_size_gb: <%= ENV['DEVICE_SIZE'] %>
+internal_music_source: /music
+internal_audiobooks_source: /audiobooks

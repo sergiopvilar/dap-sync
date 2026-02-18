@@ -4,14 +4,20 @@ require 'json'
 require 'fileutils'
 require 'net/http'
 require 'uri'
-require_relative 'src/playlist_builder.rb'
+require_relative 'src/config.rb'
+require_relative 'src/directories.rb'
+require_relative 'src/generators/playlist.rb'
+require_relative 'src/generators/sync_script.rb'
+require_relative 'src/generators/sync_selection.rb'
+require_relative 'src/fetchers/sync_selection.rb'
+require_relative 'src/fetchers/albums.rb'
+require_relative 'src/fetchers/audiobooks.rb'
+require_relative 'src/fetchers/playlists.rb'
 
 set :bind, '0.0.0.0'
 set :port, 3000
 set :public_folder, File.join(File.dirname(__FILE__), 'public')
 set :static, true
-
-SYNC_FILE_CONTAINER_PATH = '/data/sync_selection.txt'
 
 before do
   headers 'Access-Control-Allow-Origin' => '*',
@@ -23,456 +29,6 @@ options '*' do
   response.headers['Allow'] = 'HEAD,GET,PUT,POST,DELETE,OPTIONS'
   response.headers['Access-Control-Allow-Headers'] = 'X-Requested-With, X-HTTP-Method-Override, Content-Type, Cache-Control, Accept'
   200
-end
-
-# Configuration - can be overridden via environment variables
-MUSIC_SOURCE = ENV.fetch('MUSIC_SOURCE', '/music')
-AUDIOBOOKS_SOURCE = ENV.fetch('AUDIOBOOKS_SOURCE', '/audiobooks')
-# MUSIC_DIRECTORY and AUDIOBOOKS_DIRECTORY should be host paths, not container paths
-# These are used to write full host paths to sync_selection.txt
-def normalize_path(path)
-  path.to_s.sub(%r{/+$}, '')
-end
-
-MUSIC_DIRECTORY = ENV.fetch('MUSIC_DIRECTORY', '/Users/sergio/Music/Music/Media.localized/Music/')
-AUDIOBOOKS_DIRECTORY = ENV.fetch('AUDIOBOOKS_DIRECTORY', '/Users/sergio/Library/OpenAudible/books/')
-MUSIC_DESTINATION = ENV.fetch('MUSIC_DESTINATION', '/Users/sergio/sync/music/')
-AUDIOBOOKS_DESTINATION = ENV.fetch('AUDIOBOOKS_DESTINATION', '/Users/sergio/sync/audiobooks/')
-PLAYLIST_DESTINATION = ENV.fetch('PLAYLIST_DESTINATION', '/Users/sergio/sync/playlists/')
-DATA_PATH = normalize_path(ENV.fetch('DATA_ABSOLUTE_PATH', '/data'))
-SYNC_SELECTION_FILE = "#{DATA_PATH}/sync_selection.txt"
-PLAYLISTS_DIR = "#{DATA_PATH}/Playlists"
-DAP_SYNC_TEMPLATE = File.join(File.dirname(__FILE__), 'dap_sync.sh')
-DAP_SYNC_OUTPUT = "/data/dap_sync.sh"
-DEVICE_SIZE_GB = ENV.fetch('DEVICE_SIZE', '160').to_i
-
-# Optional Subsonic server (all three must be set to enable Playlists tab)
-SUBSONIC_URL = (ENV['SUBSONIC_URL'] || '').strip
-SUBSONIC_USERNAME = (ENV['SUBSONIC_USERNAME'] || '').strip
-SUBSONIC_PASSWORD = (ENV['SUBSONIC_PASSWORD'] || '').strip
-SUBSONIC_CONFIGURED = SUBSONIC_URL != '' && SUBSONIC_USERNAME != '' && SUBSONIC_PASSWORD != ''
-
-def calculate_directory_size(path)
-  return 0 unless Dir.exist?(path)
-  total = 0
-  begin
-    Dir.glob(File.join(path, '**', '*')).each do |file|
-      total += File.size(file) if File.file?(file)
-    end
-  rescue Errno::EACCES, Errno::ENOENT
-    # Permission denied or file not found, return 0
-  end
-  total
-end
-
-def format_size(bytes)
-  return "0 B" if bytes == 0
-  units = ['B', 'KB', 'MB', 'GB', 'TB']
-  exp = (Math.log(bytes) / Math.log(1024)).floor
-  exp = units.length - 1 if exp >= units.length
-  "#{(bytes / (1024.0 ** exp)).round(2)} #{units[exp]}"
-end
-
-def get_albums_grouped_by_artist
-  grouped = {}
-  return grouped unless Dir.exist?(MUSIC_SOURCE)
-  
-  begin
-    Dir.entries(MUSIC_SOURCE).sort.each do |item|
-      next if item == '.' || item == '..'
-      item_path = File.join(MUSIC_SOURCE, item)
-      next unless File.directory?(item_path)
-      
-      # Check if this directory contains subdirectories (likely Artist/Album structure)
-      has_subdirs = Dir.entries(item_path).any? { |sub| 
-        sub != '.' && sub != '..' && File.directory?(File.join(item_path, sub))
-      }
-      
-      if has_subdirs
-        # Artist/Album structure: item is artist, subdirs are albums
-        artist = item
-        grouped[artist] ||= []
-        Dir.entries(item_path).sort.each do |album|
-          next if album == '.' || album == '..'
-          album_path = File.join(item_path, album)
-          if File.directory?(album_path)
-            full_path = File.join(artist, album)
-            size = calculate_directory_size(album_path)
-            grouped[artist] << { 
-              name: album, 
-              path: full_path,
-              size: size,
-              size_formatted: format_size(size)
-            }
-          end
-        end
-      else
-        # Flat structure: assume format "Artist - Album" or just album name
-        if item.include?(' - ')
-          parts = item.split(' - ', 2)
-          artist = parts[0].strip
-          album_name = parts[1].strip
-        else
-          artist = 'Unknown Artist'
-          album_name = item
-        end
-        grouped[artist] ||= []
-        size = calculate_directory_size(item_path)
-        grouped[artist] << { 
-          name: album_name, 
-          path: item,
-          size: size,
-          size_formatted: format_size(size)
-        }
-      end
-    end
-  rescue Errno::EACCES
-    # Permission denied, return empty hash
-  end
-  
-  grouped
-end
-
-def get_all_albums
-  albums = []
-  get_albums_grouped_by_artist.each do |artist, album_list|
-    album_list.each do |album|
-      albums << album[:path]
-    end
-  end
-  albums
-end
-
-def get_audiobooks
-  audiobooks = []
-  return audiobooks unless Dir.exist?(AUDIOBOOKS_SOURCE)
-  
-  begin
-    Dir.entries(AUDIOBOOKS_SOURCE).sort.each do |item|
-      next if item == '.' || item == '..'
-      item_path = File.join(AUDIOBOOKS_SOURCE, item)
-      
-      # Handle both directories and files
-      if File.directory?(item_path)
-        size = calculate_directory_size(item_path)
-        audiobooks << {
-          name: item,
-          path: item,
-          size: size,
-          size_formatted: format_size(size)
-        }
-      elsif File.file?(item_path)
-        # It's a file (e.g., .m4b, .mp3)
-        size = File.size(item_path)
-        audiobooks << {
-          name: item,
-          path: item,
-          size: size,
-          size_formatted: format_size(size)
-        }
-      end
-    end
-  rescue Errno::EACCES => e
-    # Permission denied, return empty list
-    logger.error "Error accessing audiobooks: #{e.message}"
-  end
-  
-  audiobooks
-end
-
-def read_sync_selection
-  default = { music: { mode: "all", albums: [] }, audiobooks: { mode: "all", audiobooks: [] }, playlists: { playlist_ids: [] } }
-  return default unless File.exist?(SYNC_FILE_CONTAINER_PATH)
-
-  begin
-    content = File.read(SYNC_FILE_CONTAINER_PATH).strip
-    
-    # Try to parse new format (ALL_MUSIC/ALL_AUDIOBOOKS flags or MUSIC_ALBUM= / AUDIOBOOKS= lines)
-    if content.include?('ALL_MUSIC=') || content.include?('ALL_AUDIOBOOKS=') || content.include?('MUSIC_ALBUM=') || content.include?('AUDIOBOOKS=') || content.include?('PLAYLIST_ID=')
-      music_albums = []
-      audiobooks_list = []
-      playlist_ids = []
-      music_mode = nil
-      audiobooks_mode = nil
-
-      content.lines.each do |line|
-        line = line.strip
-        next if line.empty? || line.start_with?('#')
-
-        if line == 'ALL_MUSIC=true'
-          music_mode = 'all'
-        elsif line == 'ALL_AUDIOBOOKS=true'
-          audiobooks_mode = 'all'
-        elsif line.start_with?('MUSIC_ALBUM=')
-          music_mode = 'selected' if music_mode.nil?
-          album_path = line.sub('MUSIC_ALBUM=', '').strip
-          music_albums << album_path unless album_path.empty?
-        elsif line.start_with?('AUDIOBOOKS=')
-          audiobooks_mode = 'selected' if audiobooks_mode.nil?
-          audiobook_path = line.sub('AUDIOBOOKS=', '').strip
-          audiobooks_list << audiobook_path unless audiobook_path.empty?
-        elsif line.start_with?('PLAYLIST_ID=')
-          pid = line.sub('PLAYLIST_ID=', '').strip
-          playlist_ids << pid unless pid.empty?
-        end
-      end
-
-      # Infer mode from list if flag was not set (backward compatibility)
-      all_albums = get_all_albums
-      all_audiobooks = get_audiobooks.map { |ab| ab[:path] }
-
-      relative_music = music_albums.map do |path|
-        if path.start_with?(MUSIC_DIRECTORY)
-          path.sub(/^#{Regexp.escape(MUSIC_DIRECTORY)}/, '')
-        elsif path.start_with?('/')
-          path
-        else
-          path
-        end
-      end
-
-      # Normalize to relative paths that match get_audiobooks (path = basename or relative under source)
-      aud_dir = AUDIOBOOKS_DIRECTORY.end_with?('/') ? AUDIOBOOKS_DIRECTORY : "#{AUDIOBOOKS_DIRECTORY}/"
-      relative_audiobooks = audiobooks_list.map do |path|
-        if path.start_with?(aud_dir) || path.start_with?(AUDIOBOOKS_DIRECTORY)
-          path.sub(/^#{Regexp.escape(aud_dir)}/, '').sub(/^#{Regexp.escape(AUDIOBOOKS_DIRECTORY)}/, '').strip
-        elsif path.start_with?('/')
-          File.basename(path)
-        else
-          path
-        end
-      end
-      relative_audiobooks.map! { |p| p.start_with?('/') ? p[1..] : p }
-
-      music_mode = (relative_music.sort == all_albums.sort) ? 'all' : 'selected' if music_mode.nil?
-      audiobooks_mode = (relative_audiobooks.sort == all_audiobooks.sort) ? 'all' : 'selected' if audiobooks_mode.nil?
-
-      return {
-        music: {
-          mode: music_mode,
-          albums: relative_music
-        },
-        audiobooks: {
-          mode: audiobooks_mode,
-          audiobooks: relative_audiobooks
-        },
-        playlists: { playlist_ids: playlist_ids }
-      }
-    end
-
-    # Try to parse old format with MUSIC_MODE= (for backward compatibility)
-    if content.include?('MUSIC_MODE=') || content.include?('AUDIOBOOKS_MODE=')
-      music_mode = "all"
-      music_albums = []
-      audiobooks_mode = "all"
-      audiobooks_list = []
-      playlist_ids = []
-
-      content.lines.each do |line|
-        line = line.strip
-        next if line.empty? || line.start_with?('#')
-        
-        if line.start_with?('MUSIC_MODE=')
-          music_mode = line.sub('MUSIC_MODE=', '').strip
-        elsif line.start_with?('MUSIC_ALBUM=')
-          album_path = line.sub('MUSIC_ALBUM=', '').strip
-          music_albums << album_path unless album_path.empty?
-        elsif line.start_with?('AUDIOBOOKS_MODE=')
-          audiobooks_mode = line.sub('AUDIOBOOKS_MODE=', '').strip
-        elsif line.start_with?('AUDIOBOOKS=')
-          audiobook_path = line.sub('AUDIOBOOKS=', '').strip
-          audiobooks_list << audiobook_path unless audiobook_path.empty?
-        elsif line.start_with?('PLAYLIST_ID=')
-          pid = line.sub('PLAYLIST_ID=', '').strip
-          playlist_ids << pid unless pid.empty?
-        end
-      end
-      
-      # Convert full paths back to relative paths for display
-      relative_music = music_albums.map do |path|
-        if path.start_with?(MUSIC_DIRECTORY)
-          path.sub(/^#{Regexp.escape(MUSIC_DIRECTORY)}/, '')
-        elsif path.start_with?('/')
-          path
-        else
-          path
-        end
-      end
-      
-      relative_audiobooks = audiobooks_list.map do |path|
-        if path.start_with?(AUDIOBOOKS_DIRECTORY)
-          path.sub(/^#{Regexp.escape(AUDIOBOOKS_DIRECTORY)}/, '')
-        elsif path.start_with?('/')
-          path
-        else
-          path
-        end
-      end
-      
-      return {
-        music: {
-          mode: music_mode,
-          albums: relative_music
-        },
-        audiobooks: {
-          mode: audiobooks_mode,
-          audiobooks: relative_audiobooks
-        },
-        playlists: { playlist_ids: playlist_ids }
-      }
-    end
-    
-    # Try to parse as JSON (old format, for backward compatibility)
-    if content.start_with?('{')
-      parsed = JSON.parse(content)
-      music_albums = parsed['music']&.dig('albums') || []
-      audiobooks_list = parsed['audiobooks']&.dig('audiobooks') || []
-      
-      relative_music = music_albums.map do |path|
-        if path.start_with?(MUSIC_DIRECTORY)
-          path.sub(/^#{Regexp.escape(MUSIC_DIRECTORY)}/, '')
-        elsif path.start_with?('/')
-          path
-        else
-          path
-        end
-      end
-      
-      relative_audiobooks = audiobooks_list.map do |path|
-        if path.start_with?(AUDIOBOOKS_DIRECTORY)
-          path.sub(/^#{Regexp.escape(AUDIOBOOKS_DIRECTORY)}/, '')
-        elsif path.start_with?('/')
-          path
-        else
-          path
-        end
-      end
-      
-      return {
-        music: {
-          mode: parsed['music']&.dig('mode') || 'all',
-          albums: relative_music
-        },
-        audiobooks: {
-          mode: parsed['audiobooks']&.dig('mode') || 'all',
-          audiobooks: relative_audiobooks
-        },
-        playlists: { playlist_ids: parsed['playlists']&.dig('playlist_ids') || [] }
-      }
-    end
-    
-    # Legacy format: just "*" or list of albums
-    if content == "*" || content.empty?
-      default
-    else
-      albums = content.lines.map(&:strip).reject(&:empty?)
-      { music: { mode: "selected", albums: albums }, audiobooks: { mode: "all", audiobooks: [] }, playlists: { playlist_ids: [] } }
-    end
-  rescue => e
-    default
-  end
-end
-
-def convert_to_host_path(path, container_source, host_directory)
-  # Normalize container_source to remove trailing slash for comparison
-  container_base = container_source.end_with?('/') ? container_source[0..-2] : container_source
-  container_prefix = "#{container_base}/"
-  
-  # Normalize host_directory to ensure it ends with /
-  host_dir = host_directory.end_with?('/') ? host_directory : "#{host_directory}/"
-  
-  # If path already starts with host_directory, return as-is
-  return path if path.start_with?(host_dir)
-  
-  # Remove container path prefix if present (e.g., /music/ or /audiobooks/)
-  if path.start_with?(container_prefix)
-    relative_path = path[container_prefix.length..-1]
-  elsif path.start_with?('/music/')
-    relative_path = path[7..-1]
-  elsif path.start_with?('/audiobooks/')
-    relative_path = path[12..-1]
-  elsif path.start_with?('/')
-    # Already absolute but not container path - assume it's already a host path
-    return path
-  else
-    # Relative path
-    relative_path = path
-  end
-  
-  # Remove leading slash from relative_path if present
-  relative_path = relative_path[1..-1] if relative_path.start_with?('/')
-  
-  "#{host_dir}#{relative_path}"
-end
-
-def write_sync_selection(music_mode, music_albums, audiobooks_mode, audiobooks_list, playlist_ids = [])
-  FileUtils.mkdir_p(File.dirname(SYNC_FILE_CONTAINER_PATH))
-
-  lines = []
-  # Music: flag for "all" or list of selected albums
-  if music_mode.to_s == "all"
-    lines << "ALL_MUSIC=true"
-  else
-    (music_albums || []).each do |path|
-      album_path = convert_to_host_path(path.to_s, MUSIC_SOURCE, MUSIC_DIRECTORY)
-      lines << "MUSIC_ALBUM=#{album_path}"
-    end
-  end
-  # Audiobooks: flag for "all" or list of selected audiobooks
-  if audiobooks_mode.to_s == "all"
-    lines << "ALL_AUDIOBOOKS=true"
-  else
-    (audiobooks_list || []).each do |path|
-      audiobook_path = convert_to_host_path(path.to_s, AUDIOBOOKS_SOURCE, AUDIOBOOKS_DIRECTORY)
-      lines << "AUDIOBOOKS=#{audiobook_path}"
-    end
-  end
-  # Subsonic playlist IDs (for future sync)
-  (playlist_ids || []).each do |id|
-    lines << "PLAYLIST_ID=#{id.to_s.strip}" unless id.to_s.strip.empty?
-  end
-
-  
-
-  content = lines.join("\n") + "\n"
-  File.write(SYNC_FILE_CONTAINER_PATH, content)
-
-  # Process dap_sync.sh template and save to /data with env vars substituted
-  process_dap_sync_template
-rescue StandardError => e
-  logger.error "Error writing sync selection: #{e.message}"
-  raise
-end
-
-def process_dap_sync_template
-  unless File.exist?(DAP_SYNC_TEMPLATE)
-    logger.error "DAP_SYNC_TEMPLATE not found at #{DAP_SYNC_TEMPLATE}"
-    logger.error "  Current directory: #{Dir.pwd}"
-    logger.error "  App file location: #{__FILE__}"
-    return
-  end
-
-  FileUtils.mkdir_p(File.dirname(DAP_SYNC_OUTPUT))
-
-  template_content = File.read(DAP_SYNC_TEMPLATE)
-  processed_content = template_content
-    .gsub('{{SYNC_SELECTION_FILE}}', SYNC_SELECTION_FILE)
-    .gsub('{{PLAYLISTS_DIR}}', PLAYLISTS_DIR)
-    .gsub('{{MUSIC_DESTINATION}}', MUSIC_DESTINATION)
-    .gsub('{{AUDIOBOOKS_DESTINATION}}', AUDIOBOOKS_DESTINATION)
-    .gsub('{{MUSIC_DIRECTORY}}', MUSIC_DIRECTORY)
-    .gsub('{{AUDIOBOOKS_DIRECTORY}}', AUDIOBOOKS_DIRECTORY)
-    .gsub('{{PLAYLIST_DESTINATION}}', PLAYLIST_DESTINATION)
-
-  File.write(DAP_SYNC_OUTPUT, processed_content)
-  File.chmod(0o755, DAP_SYNC_OUTPUT)
-  logger.info "Created dap_sync.sh at #{DAP_SYNC_OUTPUT}"
-rescue StandardError => e
-  logger.error "Failed to process dap_sync template: #{e.message}"
-  logger.error "  Template: #{DAP_SYNC_TEMPLATE}"
-  logger.error "  Output: #{DAP_SYNC_OUTPUT}"
-  logger.error "  Backtrace: #{e.backtrace.first(3).join("\n  ")}"
-  raise
 end
 
 get '/' do
@@ -492,9 +48,8 @@ end
 
 get '/api/albums' do
   content_type :json
-  grouped = get_albums_grouped_by_artist
-  audiobooks = get_audiobooks
-  selection = read_sync_selection
+  grouped = Fetchers::Albums.grouped_by_artist
+  audiobooks = Fetchers::Audiobooks.all
   
   # Calculate total size of all albums
   total_size = 0
@@ -509,21 +64,21 @@ get '/api/albums' do
   
   # Convert GB to bytes (1 GB = 1024^3 bytes)
   # Use integer to avoid floating point precision issues
-  device_size_bytes = (DEVICE_SIZE_GB * 1024 * 1024 * 1024).to_i
+  device_size_bytes = (Config.device_size_gb * 1024 * 1024 * 1024).to_i
   
   payload = {
     albums_by_artist: grouped,
-    albums: get_all_albums,
+    albums: Fetchers::Albums.all,
     audiobooks: audiobooks,
-    selection: selection,
+    selection: Fetchers::SyncSelection.read_sync_selection,
     total_size: total_size,
-    total_size_formatted: format_size(total_size),
+    total_size_formatted: Directories.format_size(total_size),
     audiobooks_total_size: audiobooks_total_size,
-    audiobooks_total_size_formatted: format_size(audiobooks_total_size),
-    device_size_gb: DEVICE_SIZE_GB,
+    audiobooks_total_size_formatted: Directories.format_size(audiobooks_total_size),
+    device_size_gb: Config.device_size_gb,
     device_size_bytes: device_size_bytes,
-    device_size_formatted: format_size(device_size_bytes),
-    subsonic_configured: SUBSONIC_CONFIGURED
+    device_size_formatted: Directories.format_size(device_size_bytes),
+    subsonic_configured: File.exist?(Config.internal_navidrome_database)
   }
   payload.to_json
 end
@@ -537,21 +92,12 @@ post '/api/selection' do
   audiobooks_mode = data['audiobooks_mode'] || 'all'
   audiobooks_list = data['audiobooks'] || []
   playlist_ids = data['playlist_ids'] || []
-  
-  # Pass relative paths - write_sync_selection will convert to full paths using MUSIC_DIRECTORY/AUDIOBOOKS_DIRECTORY
-  write_sync_selection(music_mode, music_albums, audiobooks_mode, audiobooks_list, playlist_ids)
 
-  # Rebuild playlist files: empty /data/Playlists and write one .m3u8 per selected playlist
-  PlaylistBuilder.reset_playlists_dir
+  Generators::SyncSelection.generate_sync_selection(music_mode, music_albums, audiobooks_mode, audiobooks_list, playlist_ids)
+  Generators::Playlist.generate_playlists(playlist_ids)
+  Generators::SyncScript.generate_sync_script
 
-  playlist_ids.each do |id|
-    next if id.to_s.strip.empty?
-    begin
-      PlaylistBuilder.new(id.to_s.strip).write_playlist_file
-    rescue StandardError => e
-      puts "PlaylistBuilder failed for #{id}: #{e.message}"
-    end
-  end
+  logger.info Config.dap_sync_output
 
   { success: true, message: "Selection saved successfully" }.to_json
 end
@@ -564,34 +110,10 @@ end
 # Proxy to Subsonic getPlaylists (credentials stay on server)
 get '/api/playlists' do
   content_type :json
-  unless SUBSONIC_CONFIGURED
+  unless File.exist?(Config.internal_navidrome_database)
     status 503
     return { error: 'Subsonic not configured' }.to_json
   end
-  base = SUBSONIC_URL.sub(%r{/+$}, '')
-  path = '/rest/getPlaylists'
-  params = {
-    u: SUBSONIC_USERNAME,
-    p: SUBSONIC_PASSWORD,
-    v: '1.16.0',
-    c: 'dap-sync',
-    f: 'json'
-  }
-  query = URI.encode_www_form(params)
-  url = URI("#{base}#{path}?#{query}")
-  begin
-    res = Net::HTTP.get_response(url)
-    body = res.body
-    data = JSON.parse(body)
-    if data.dig('subsonic-response', 'status') == 'ok'
-      playlists = data.dig('subsonic-response', 'playlists', 'playlist') || []
-      { playlists: playlists }.to_json
-    else
-      status 502
-      { error: data.dig('subsonic-response', 'error', 'message') || 'Subsonic error' }.to_json
-    end
-  rescue StandardError => e
-    status 502
-    { error: "Subsonic request failed: #{e.message}" }.to_json
-  end
+
+  Fetchers::Playlists.all.to_json
 end
