@@ -1,6 +1,8 @@
 # DAP Sync Selection UI
 
-A lightweight Ruby/Sinatra web UI for selecting which albums to sync to your DAP (Digital Audio Player).
+A lightweight Ruby/Sinatra web UI for selecting which music and audiobooks to sync to your DAP (Digital Audio Player).
+
+![DAP Sync Selection UI](dap-sync.png)
 
 ## Features
 
