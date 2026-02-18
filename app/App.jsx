@@ -24,6 +24,7 @@ function App() {
   const [deviceSizeBytes, setDeviceSizeBytes] = useState(0)
   const [deviceSizeFormatted, setDeviceSizeFormatted] = useState('0 B')
   const [subsonicConfigured, setSubsonicConfigured] = useState(false)
+  const [playlistMode, setPlaylistMode] = useState('all')
   const [selectedPlaylistIds, setSelectedPlaylistIds] = useState([])
 
   const formatSize = (bytes) => {
@@ -120,6 +121,7 @@ function App() {
       const musicSel = selection.music || {}
       const audiobooksSel = selection.audiobooks || {}
       const playlistsSel = selection.playlists || {}
+      setPlaylistMode(playlistsSel.mode === 'selected' ? 'selected' : 'all')
       setSelectedPlaylistIds(playlistsSel.playlist_ids || [])
 
       if (musicSel.mode === 'selected') {
@@ -163,6 +165,7 @@ function App() {
           music_albums: selectedMusicAlbums,
           audiobooks_mode: audiobooksMode,
           audiobooks: selectedAudiobooks,
+          playlist_mode: playlistMode,
           playlist_ids: selectedPlaylistIds
         })
       })
@@ -172,7 +175,7 @@ function App() {
       if (response.ok) {
         const musicCount = musicMode === 'all' ? 'all' : selectedMusicAlbums.length
         const abCount = audiobooksMode === 'all' ? 'all' : selectedAudiobooks.length
-        const playlistCount = selectedPlaylistIds.length
+        const playlistCount = playlistMode === 'all' ? 'all' : selectedPlaylistIds.length
         const parts = [
           `${musicCount} music album(s)`,
           `${abCount} audiobook(s)`
@@ -283,6 +286,8 @@ function App() {
           {/* Playlists Tab (Subsonic) */}
           {subsonicConfigured && activeTab === 'playlists' && (
             <PlaylistsTab
+              mode={playlistMode}
+              setMode={setPlaylistMode}
               selectedPlaylistIds={selectedPlaylistIds}
               setSelectedPlaylistIds={setSelectedPlaylistIds}
             />
@@ -307,7 +312,7 @@ function App() {
           <div className="mt-6 flex justify-end gap-4">
             <button
               onClick={saveSelection}
-              disabled={saving || (musicMode === 'selected' && selectedMusicAlbums.length === 0 && audiobooksMode === 'selected' && selectedAudiobooks.length === 0)}
+              disabled={saving || (musicMode === 'selected' && selectedMusicAlbums.length === 0 && audiobooksMode === 'selected' && selectedAudiobooks.length === 0) || (subsonicConfigured && playlistMode === 'selected' && selectedPlaylistIds.length === 0)}
               className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition"
             >
               {saving ? 'Saving...' : 'Save Selection'}

@@ -82,13 +82,12 @@ post '/api/selection' do
   music_albums = data['music_albums'] || data['albums'] || []
   audiobooks_mode = data['audiobooks_mode'] || 'all'
   audiobooks_list = data['audiobooks'] || []
+  playlist_mode = data['playlist_mode'] || 'all'
   playlist_ids = data['playlist_ids'] || []
 
-  Generators::SyncSelection.generate_sync_selection(music_mode, music_albums, audiobooks_mode, audiobooks_list, playlist_ids)
-  Generators::Playlist.generate_playlists(playlist_ids)
+  Generators::SyncSelection.generate_sync_selection(music_mode, music_albums, audiobooks_mode, audiobooks_list, playlist_mode, playlist_ids)
+  Generators::Playlist.generate_playlists(playlist_mode, playlist_ids)
   Generators::SyncScript.generate_sync_script
-
-  logger.info Config.dap_sync_output
 
   { success: true, message: "Selection saved successfully" }.to_json
 end

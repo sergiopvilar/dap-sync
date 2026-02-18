@@ -9,8 +9,15 @@ module Generators
     PLAYLISTS_DIR = '/data/Playlists'
     PATH_PREFIX = '/<HDD0>/music/'
 
-    def self.generate_playlists(playlist_ids)
-      playlist_ids.each do |id|
+    def self.get_playlist_ids(playlist_mode, playlist_ids)
+      return playlist_ids if playlist_mode != 'all'
+      
+      Navidrome.new.get_playlists.map { |playlist| playlist[:id] }
+    end
+
+    def self.generate_playlists(playlist_mode, playlist_ids)
+      ids = get_playlist_ids(playlist_mode, playlist_ids)
+      ids.each do |id|
         next if id.to_s.strip.empty?
         self.new(id.to_s.strip).write_playlist_file
       end

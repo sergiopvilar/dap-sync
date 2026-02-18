@@ -11,6 +11,7 @@ module Fetchers
     def initialize
       @music_mode = "all"
       @audiobooks_mode = "all"
+      @playlist_mode = "all"
       @music_albums = []
       @audiobooks_list = []
       @playlist_ids = []
@@ -27,6 +28,7 @@ module Fetchers
           audiobooks: @audiobooks_list
         },
         playlists: {
+          mode: @playlist_mode,
           playlist_ids: @playlist_ids
         }
       }
@@ -45,6 +47,8 @@ module Fetchers
             @music_mode = 'all'
           elsif line == 'ALL_AUDIOBOOKS=true'
             @audiobooks_mode = 'all'
+          elsif line == 'ALL_PLAYLISTS=true'
+            @playlist_mode = 'all'
           elsif line.start_with?('MUSIC_ALBUM=')
             @music_mode = 'selected'
             album_path = line.sub('MUSIC_ALBUM=', '').strip.gsub(Config.music_source, '')
@@ -54,6 +58,7 @@ module Fetchers
             audiobook_path = line.sub('AUDIOBOOKS=', '').strip
             @audiobooks_list << audiobook_path.gsub(Config.audiobooks_source, '') unless audiobook_path.empty?
           elsif line.start_with?('PLAYLIST_ID=')
+            @playlist_mode = 'selected'
             pid = line.sub('PLAYLIST_ID=', '').strip
             @playlist_ids << pid unless pid.empty?
           end

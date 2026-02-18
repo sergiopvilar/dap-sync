@@ -3,7 +3,7 @@ require_relative '../config.rb'
 
 module Generators
   class SyncSelection
-    def self.generate_sync_selection(music_mode, music_albums, audiobooks_mode, audiobooks_list, playlist_ids = [])
+    def self.generate_sync_selection(music_mode, music_albums, audiobooks_mode, audiobooks_list, playlist_mode = 'all', playlist_ids = [])
     
       lines = []
       # Music: flag for "all" or list of selected albums
@@ -24,9 +24,13 @@ module Generators
           lines << "AUDIOBOOKS=#{audiobook_path}"
         end
       end
-      # Subsonic playlist IDs (for future sync)
-      (playlist_ids || []).each do |id|
-        lines << "PLAYLIST_ID=#{id.to_s.strip}" unless id.to_s.strip.empty?
+      # Playlists: flag for "all" or list of selected playlist IDs
+      if playlist_mode.to_s == "all"
+        lines << "ALL_PLAYLISTS=true"
+      else
+        (playlist_ids || []).each do |id|
+          lines << "PLAYLIST_ID=#{id.to_s.strip}" unless id.to_s.strip.empty?
+        end
       end
     
       content = lines.join("\n") + "\n"
