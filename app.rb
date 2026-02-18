@@ -42,8 +42,8 @@ PLAYLIST_DESTINATION = ENV.fetch('PLAYLIST_DESTINATION', '/Users/sergio/sync/pla
 DATA_PATH = normalize_path(ENV.fetch('DATA_ABSOLUTE_PATH', '/data'))
 SYNC_SELECTION_FILE = "#{DATA_PATH}/sync_selection.txt"
 PLAYLISTS_DIR = "#{DATA_PATH}/Playlists"
-DAP_SYNC_TEMPLATE = ENV.fetch('DAP_SYNC_TEMPLATE', File.join(File.dirname(__FILE__), 'dap_sync.sh'))
-DAP_SYNC_OUTPUT = ENV.fetch('DAP_SYNC_OUTPUT', "#{DATA_PATH}/dap_sync.sh")
+DAP_SYNC_TEMPLATE = File.join(File.dirname(__FILE__), 'dap_sync.sh')
+DAP_SYNC_OUTPUT = "/data/dap_sync.sh"
 DEVICE_SIZE_GB = ENV.fetch('DEVICE_SIZE', '160').to_i
 
 # Optional Subsonic server (all three must be set to enable Playlists tab)
@@ -174,7 +174,7 @@ def get_audiobooks
     end
   rescue Errno::EACCES => e
     # Permission denied, return empty list
-    puts "Error accessing audiobooks: #{e.message}"
+    logger.error "Error accessing audiobooks: #{e.message}"
   end
   
   audiobooks
@@ -440,12 +440,17 @@ def write_sync_selection(music_mode, music_albums, audiobooks_mode, audiobooks_l
   # Process dap_sync.sh template and save to /data with env vars substituted
   process_dap_sync_template
 rescue StandardError => e
-  puts "Error writing sync selection: #{e.message}"
+  logger.error "Error writing sync selection: #{e.message}"
   raise
 end
 
 def process_dap_sync_template
-  return unless File.exist?(DAP_SYNC_TEMPLATE)
+  unless File.exist?(DAP_SYNC_TEMPLATE)
+    logger.error "DAP_SYNC_TEMPLATE not found at #{DAP_SYNC_TEMPLATE}"
+    logger.error "  Current directory: #{Dir.pwd}"
+    logger.error "  App file location: #{__FILE__}"
+    return
+  end
 
   FileUtils.mkdir_p(File.dirname(DAP_SYNC_OUTPUT))
 
@@ -461,8 +466,13 @@ def process_dap_sync_template
 
   File.write(DAP_SYNC_OUTPUT, processed_content)
   File.chmod(0o755, DAP_SYNC_OUTPUT)
+  logger.info "Created dap_sync.sh at #{DAP_SYNC_OUTPUT}"
 rescue StandardError => e
-  puts "Warning: Failed to process dap_sync template: #{e.message}"
+  logger.error "Failed to process dap_sync template: #{e.message}"
+  logger.error "  Template: #{DAP_SYNC_TEMPLATE}"
+  logger.error "  Output: #{DAP_SYNC_OUTPUT}"
+  logger.error "  Backtrace: #{e.backtrace.first(3).join("\n  ")}"
+  raise
 end
 
 get '/' do
