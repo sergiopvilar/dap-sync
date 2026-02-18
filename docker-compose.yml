@@ -5,15 +5,25 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - /Users/sergio/Music/Music/Media.localized/Music:/music:ro
+      # Host path to your music library (read-only in container)
+      - /path/to/your/music:/music:ro
+      # ./data holds sync_selection.txt, dap_sync.sh, and Playlists/
       - ./data:/data
-      - /Users/sergio/Library/OpenAudible/books/:/audiobooks:ro
+      # Host path to your audiobooks (read-only)
+      - /path/to/your/audiobooks:/audiobooks:ro
     environment:
       - RACK_ENV=production
       - DEVICE_SIZE=160
-      - AUDIOBOOKS_DIRECTORY=/Users/sergio/Library/OpenAudible/books/
-      - MUSIC_DIRECTORY=/Users/sergio/Music/Music/Media.localized/Music/
-      - MUSIC_DESTINATION=/Users/sergio/sync/music/
-      - AUDIOBOOKS_DESTINATION=/Users/sergio/sync/audiobooks/
-      - SELECTION_FILE=/Users/sergio/sync/selection.txt
+      # Optional: Subsonic server for Playlists tab (set all three to enable)
+      - SUBSONIC_URL=https://your-subsonic.example.com
+      - SUBSONIC_USERNAME=your_username
+      - SUBSONIC_PASSWORD=your_password
+      # Host paths used in sync_selection.txt and when running dap_sync.sh on the host
+      - MUSIC_DIRECTORY=/path/to/your/music
+      - AUDIOBOOKS_DIRECTORY=/path/to/your/audiobooks
+      - MUSIC_DESTINATION=/path/to/sync/music
+      - AUDIOBOOKS_DESTINATION=/path/to/sync/audiobooks
+      - PLAYLIST_DESTINATION=/path/to/sync/playlists
+      # Host path to the same ./data dir (for generated dap_sync.sh and Playlists)
+      - DATA_ABSOLUTE_PATH=/path/to/dap-server-sync/data
     restart: unless-stopped
