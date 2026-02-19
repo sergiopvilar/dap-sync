@@ -46,5 +46,4 @@ RUN mkdir -p /data
 
 EXPOSE 3000
 
-# Run from /dap-sync so Bundler finds the Gemfile (avoids "Could not locate Gemfile" when WORKDIR is overridden at runtime)
-CMD ["sh", "-c", "pwd && ls && cd /dap-sync && exec bundle exec ruby app.rb"]
+CMD ["bundle", "exec", "ruby", "app.rb"]
