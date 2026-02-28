@@ -7,7 +7,7 @@ require_relative '../navidrome.rb'
 module Generators
   class Playlist
     PLAYLISTS_DIR = '/data/Playlists'
-    PATH_PREFIX = '/<HDD0>/music/'
+    PATH_PREFIX = ''
 
     def self.get_playlist_ids(playlist_mode, playlist_ids)
       return playlist_ids if playlist_mode != 'all'
