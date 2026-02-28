@@ -87,7 +87,12 @@ fi
 echo "========== SYNCING MUSIC =========="
 if [ "$MUSIC_SYNC_ALL" = true ]; then
   echo "Music sync mode: ALL albums"
-  rsync "${RSYNC_OPTS[@]}" "$MUSIC_DIRECTORY" "$DST/" 2> >(grep -v "failed to chown" >&2)
+  rsync_err=$(mktemp)
+  rsync "${RSYNC_OPTS[@]}" "$MUSIC_DIRECTORY" "$DST/" 2> "$rsync_err"
+  rsync_rc=$?
+  grep -v "failed to chown" "$rsync_err" >&2 || true
+  rm -f "$rsync_err"
+  [ $rsync_rc -ne 0 ] && exit $rsync_rc
 else
   echo "Music sync mode: SELECTED albums (${#SELECTED_MUSIC_ALBUMS[@]} album(s))"
   if [ ${#SELECTED_MUSIC_ALBUMS[@]} -eq 0 ]; then
