@@ -33,11 +33,13 @@ RSYNC_OPTS=(
   --no-owner
   --no-group
   --no-perms
-  --numeric-ids
+  --no-specials
+  --no-devices
+  --no-acls
+  --no-xattrs
   --chmod=ugo=rwX
   --modify-window=1
 )
-
 echo "Starting rsync..."
 echo
 
