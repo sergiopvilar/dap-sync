@@ -415,8 +415,8 @@ if [[ -d "$PLAYLISTS_DIR" ]]; then
   echo
   echo "========== SYNCING PLAYLISTS =========="
   if [[ -d "$PLAYLIST_DESTINATION" ]] || mkdir -p "$PLAYLIST_DESTINATION"; then
-    echo "Syncing playlists: $PLAYLISTS_DIR -> $PLAYLIST_DESTINATION"
-    rsync "${RSYNC_OPTS[@]}" "$PLAYLISTS_DIR/" "$PLAYLIST_DESTINATION/"
+    echo "Syncing playlists (.m3u / .m3u8): $PLAYLISTS_DIR -> $PLAYLIST_DESTINATION"
+    rsync "${RSYNC_OPTS[@]}" --include='*.m3u' --include='*.m3u8' --exclude='*' "$PLAYLISTS_DIR/" "$PLAYLIST_DESTINATION/"
   else
     echo "WARNING: Could not create playlist destination $PLAYLIST_DESTINATION, skipping playlists sync."
   fi
