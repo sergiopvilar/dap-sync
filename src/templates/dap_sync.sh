@@ -43,18 +43,18 @@ RSYNC_OPTS=(
 
 # Run rsync and hide "failed to chown" lines (common on NAS/USB when not root).
 # Capture both stdout and stderr so we filter regardless of which stream rsync uses.
-# Always return 0 so one failed rsync does not stop the rest of the script (set -e).
+# Subshell + set +e so nothing inside (mktemp failure, rsync exit, grep exit) stops the main script.
 run_rsync() {
-  local tmp rc
-  tmp=$(mktemp)
-  rsync "$@" > "$tmp" 2>&1
-  rc=$?
-  grep -v "failed to chown" "$tmp" || true
-  rm -f "$tmp"
-  if [ "$rc" -ne 0 ]; then
-    echo "WARNING: rsync exited with code $rc (continuing anyway)." >&2
-  fi
-  return 0
+  (
+    set +e
+    tmp=$(mktemp 2>/dev/null) || tmp="/tmp/dap_rsync_$$.tmp"
+    rsync "$@" > "$tmp" 2>&1
+    rc=$?
+    grep -v "failed to chown" "$tmp" || true
+    rm -f "$tmp"
+    [ "$rc" -ne 0 ] && echo "WARNING: rsync exited with code $rc (continuing anyway)." >&2
+    exit 0
+  )
 }
 
 echo "Starting rsync..."
