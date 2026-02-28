@@ -41,14 +41,15 @@ RSYNC_OPTS=(
   --modify-window=1
 )
 
-# Run rsync and hide "failed to chown" stderr (common on NAS/USB when not root)
+# Run rsync and hide "failed to chown" lines (common on NAS/USB when not root).
+# Capture both stdout and stderr so we filter regardless of which stream rsync uses.
 run_rsync() {
-  local err
-  err=$(mktemp)
-  rsync "$@" 2> "$err"
+  local tmp
+  tmp=$(mktemp)
+  rsync "$@" > "$tmp" 2>&1
   local rc=$?
-  grep -v "failed to chown" "$err" >&2 || true
-  rm -f "$err"
+  grep -v "failed to chown" "$tmp" || true
+  rm -f "$tmp"
   return $rc
 }
 
