@@ -40,6 +40,18 @@ RSYNC_OPTS=(
   --chmod=ugo=rwX
   --modify-window=1
 )
+
+# Run rsync and hide "failed to chown" stderr (common on NAS/USB when not root)
+run_rsync() {
+  local err
+  err=$(mktemp)
+  rsync "$@" 2> "$err"
+  local rc=$?
+  grep -v "failed to chown" "$err" >&2 || true
+  rm -f "$err"
+  return $rc
+}
+
 echo "Starting rsync..."
 echo
 
@@ -87,12 +99,7 @@ fi
 echo "========== SYNCING MUSIC =========="
 if [ "$MUSIC_SYNC_ALL" = true ]; then
   echo "Music sync mode: ALL albums"
-  rsync_err=$(mktemp)
-  rsync "${RSYNC_OPTS[@]}" "$MUSIC_DIRECTORY" "$DST/" 2> "$rsync_err"
-  rsync_rc=$?
-  grep -v "failed to chown" "$rsync_err" >&2 || true
-  rm -f "$rsync_err"
-  [ $rsync_rc -ne 0 ] && exit $rsync_rc
+  run_rsync "${RSYNC_OPTS[@]}" "$MUSIC_DIRECTORY" "$DST/"
 else
   echo "Music sync mode: SELECTED albums (${#SELECTED_MUSIC_ALBUMS[@]} album(s))"
   if [ ${#SELECTED_MUSIC_ALBUMS[@]} -eq 0 ]; then
@@ -115,13 +122,13 @@ else
           mkdir -p "$dest_path"
           # Use rsync to copy the album directory contents to the destination
           # Note: rsync source/ dest/ copies contents of source into dest
-          rsync "${RSYNC_OPTS[@]}" "$album_path/" "$dest_path/"
+          run_rsync "${RSYNC_OPTS[@]}" "$album_path/" "$dest_path/"
         else
           echo "WARNING: Album path doesn't match MUSIC_DIRECTORY: $album_path"
           # Use album name as destination fallback
           album_name=$(basename "$album_path")
           mkdir -p "$DST"
-          rsync "${RSYNC_OPTS[@]}" "$album_path/" "$DST/$album_name/"
+          run_rsync "${RSYNC_OPTS[@]}" "$album_path/" "$DST/$album_name/"
         fi
       else
         echo "WARNING: Album not found: $album_path"
@@ -283,7 +290,7 @@ if [ -d "$AUDIOBOOKS_DIRECTORY" ]; then
   if [ "$AUDIOBOOKS_SYNC_ALL" = true ]; then
     echo "Audiobooks sync mode: ALL"
     # Sync all files and directories from audiobooks source
-    rsync "${RSYNC_OPTS[@]}" "$AUDIOBOOKS_DIRECTORY" "$AUDIOBOOKS_DST/"
+    run_rsync "${RSYNC_OPTS[@]}" "$AUDIOBOOKS_DIRECTORY" "$AUDIOBOOKS_DST/"
   else
     echo "Audiobooks sync mode: SELECTED (${#SELECTED_AUDIOBOOKS[@]} audiobook(s))"
     if [ ${#SELECTED_AUDIOBOOKS[@]} -eq 0 ]; then
@@ -304,10 +311,10 @@ if [ -d "$AUDIOBOOKS_DIRECTORY" ]; then
             # Ensure destination directory exists
             if [ -d "$audiobook_path" ]; then
               mkdir -p "$dest_path"
-              rsync "${RSYNC_OPTS[@]}" "$audiobook_path/" "$dest_path/"
+              run_rsync "${RSYNC_OPTS[@]}" "$audiobook_path/" "$dest_path/"
             else
               mkdir -p "$(dirname "$dest_path")"
-              rsync "${RSYNC_OPTS[@]}" "$audiobook_path" "$dest_path"
+              run_rsync "${RSYNC_OPTS[@]}" "$audiobook_path" "$dest_path"
             fi
           else
             echo "WARNING: Audiobook path doesn't match AUDIOBOOKS_DIRECTORY: $audiobook_path"
@@ -315,10 +322,10 @@ if [ -d "$AUDIOBOOKS_DIRECTORY" ]; then
             audiobook_name=$(basename "$audiobook_path")
             if [ -d "$audiobook_path" ]; then
               mkdir -p "$AUDIOBOOKS_DST"
-              rsync "${RSYNC_OPTS[@]}" "$audiobook_path/" "$AUDIOBOOKS_DST/$audiobook_name/"
+              run_rsync "${RSYNC_OPTS[@]}" "$audiobook_path/" "$AUDIOBOOKS_DST/$audiobook_name/"
             else
               mkdir -p "$AUDIOBOOKS_DST"
-              rsync "${RSYNC_OPTS[@]}" "$audiobook_path" "$AUDIOBOOKS_DST/$audiobook_name"
+              run_rsync "${RSYNC_OPTS[@]}" "$audiobook_path" "$AUDIOBOOKS_DST/$audiobook_name"
             fi
           fi
         else
@@ -423,7 +430,7 @@ if [[ -d "$PLAYLISTS_DIR" ]]; then
   echo "========== SYNCING PLAYLISTS =========="
   if [[ -d "$PLAYLIST_DESTINATION" ]] || mkdir -p "$PLAYLIST_DESTINATION"; then
     echo "Syncing playlists (.m3u / .m3u8): $PLAYLISTS_DIR -> $PLAYLIST_DESTINATION"
-    rsync "${RSYNC_OPTS[@]}" --include='*.m3u' --include='*.m3u8' --exclude='*' "$PLAYLISTS_DIR/" "$PLAYLIST_DESTINATION/"
+    run_rsync "${RSYNC_OPTS[@]}" --include='*.m3u' --include='*.m3u8' --exclude='*' "$PLAYLISTS_DIR/" "$PLAYLIST_DESTINATION/"
   else
     echo "WARNING: Could not create playlist destination $PLAYLIST_DESTINATION, skipping playlists sync."
   fi
